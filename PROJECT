@@ -1,0 +1,25 @@
+domain: cluster.x-k8s.io
+layout:
+- go.kubebuilder.io/v3
+projectName: cluster-api-provider-docker
+repo: github.com/capi-samples/cluster-api-provider-docker
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: cluster.x-k8s.io
+  group: infrastructure
+  kind: DockerCluster
+  path: github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: cluster.x-k8s.io
+  group: infrastructure
+  kind: DockerMachine
+  path: github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1
+  version: v1alpha1
+version: "3"
