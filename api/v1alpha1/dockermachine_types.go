@@ -24,13 +24,20 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+const (
+	// MachineFinalizer allows ReconcileDockeroMachine to clean up Byo
+	// resources associated with DockeroMachine before removing it from the
+	// API Server.
+	MachineFinalizer = "dockermachine.infrastructure.cluster.x-k8s.io"
+)
+
 // DockerMachineSpec defines the desired state of DockerMachine
 type DockerMachineSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// ProviderID is the identifier for the DockerMachine instance
-	ProviderID string `json:"providerID,omitempty"`
+	ProviderID *string `json:"providerID,omitempty"`
 }
 
 // DockerMachineStatus defines the observed state of DockerMachine
@@ -70,4 +77,14 @@ type DockerMachineList struct {
 
 func init() {
 	SchemeBuilder.Register(&DockerMachine{}, &DockerMachineList{})
+}
+
+// GetConditions returns the conditions of ByoMachine status
+func (dockerMachine *DockerMachine) GetConditions() clusterv1.Conditions {
+	return dockerMachine.Status.Conditions
+}
+
+// SetConditions sets the conditions of ByoMachine status
+func (dockerMachine *DockerMachine) SetConditions(conditions clusterv1.Conditions) {
+	dockerMachine.Status.Conditions = conditions
 }

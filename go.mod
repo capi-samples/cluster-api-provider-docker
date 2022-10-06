@@ -10,7 +10,10 @@ require (
 	sigs.k8s.io/controller-runtime v0.12.3
 )
 
-require github.com/blang/semver v3.5.1+incompatible // indirect
+require (
+	github.com/blang/semver v3.5.1+incompatible // indirect
+	github.com/gobuffalo/flect v0.2.5 // indirect
+)
 
 require (
 	cloud.google.com/go v0.81.0 // indirect
