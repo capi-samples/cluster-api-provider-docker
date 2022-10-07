@@ -28,8 +28,10 @@ type DockerClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of DockerCluster. Edit dockercluster_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// LoadBalancerImage allows you override the load balancer image. If not specified a
+	// default image will be used.
+	// +optional
+	LoadBalancerImage string `json:"loadbalancerImage,omitempty"`
 }
 
 // DockerClusterStatus defines the observed state of DockerCluster
