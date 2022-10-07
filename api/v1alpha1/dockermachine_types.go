@@ -40,6 +40,22 @@ type DockerMachineSpec struct {
 	ProviderID *string `json:"providerID,omitempty"`
 }
 
+// Mount specifies a host volume to mount into a container.
+// This is a simplified version of kind v1alpha4.Mount types.
+type Mount struct {
+	// Path of the mount within the container.
+	ContainerPath string `json:"containerPath,omitempty"`
+
+	// Path of the mount on the host. If the hostPath doesn't exist, then runtimes
+	// should report error. If the hostpath is a symbolic link, runtimes should
+	// follow the symlink and mount the real destination to container.
+	HostPath string `json:"hostPath,omitempty"`
+
+	// If set, the mount is read-only.
+	// +optional
+	Readonly bool `json:"readOnly,omitempty"`
+}
+
 // DockerMachineStatus defines the observed state of DockerMachine
 type DockerMachineStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
