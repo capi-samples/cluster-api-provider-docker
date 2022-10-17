@@ -27,12 +27,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	infrastructurev1alpha1 "github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1"
 	"github.com/capi-samples/cluster-api-provider-docker/controllers"
+	"github.com/capi-samples/cluster-api-provider-docker/pkg/container"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -43,13 +45,13 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(infrastructurev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
 func main() {
-	ctx := ctrl.SetupSignalHandler()
+
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -66,13 +68,21 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	ctx := ctrl.SetupSignalHandler()
+	// Set our runtime client into the context for later use
+	runtimeClient, err := container.NewDockerClient()
+	if err != nil {
+		setupLog.Error(err, "unable to establish container runtime connection", "controller", "reconciler")
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "c9b04f86.cluster.x-k8s.io",
+		LeaderElectionID:       "controller-leader-election-capdkc",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -91,8 +101,9 @@ func main() {
 	}
 
 	if err = (&controllers.DockerClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		ContainerRuntime: runtimeClient,
 	}).SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DockerCluster")
 		os.Exit(1)
@@ -116,7 +127,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
