@@ -35,13 +35,33 @@ spec:
           spec:
             description: DockerClusterSpec defines the desired state of DockerCluster
             properties:
-              foo:
-                description: Foo is an example field of DockerCluster. Edit dockercluster_types.go
-                  to remove/update
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint represents the endpoint used to
+                  communicate with the control plane.
+                properties:
+                  host:
+                    description: The hostname on which the API server is serving.
+                    type: string
+                  port:
+                    description: The port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
+              loadbalancerImage:
+                description: LoadBalancerImage allows you override the load balancer
+                  image. If not specified a default image will be used.
                 type: string
             type: object
           status:
             description: DockerClusterStatus defines the observed state of DockerCluster
+            properties:
+              ready:
+                default: false
+                description: Ready indicates that the cluster is ready.
+                type: boolean
             type: object
         type: object
     served: true

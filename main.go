@@ -49,6 +49,7 @@ func init() {
 }
 
 func main() {
+	ctx := ctrl.SetupSignalHandler()
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -92,7 +93,7 @@ func main() {
 	if err = (&controllers.DockerClusterReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DockerCluster")
 		os.Exit(1)
 	}

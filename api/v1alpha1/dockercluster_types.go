@@ -18,6 +18,13 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+)
+
+const (
+	// ClusterFinalizer allows cleaning up resources associated with
+	// DockerCluster before removing it from the apiserver.
+	ClusterFinalizer = "dockercluster.infrastructure.cluster.x-k8s.io"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -27,6 +34,10 @@ import (
 type DockerClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
+	// +optional
+	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint"`
 
 	// LoadBalancerImage allows you override the load balancer image. If not specified a
 	// default image will be used.
@@ -38,6 +49,11 @@ type DockerClusterSpec struct {
 type DockerClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Ready indicates that the cluster is ready.
+	// +optional
+	// +kubebuilder:default=false
+	Ready bool `json:"ready"`
 }
 
 //+kubebuilder:object:root=true
