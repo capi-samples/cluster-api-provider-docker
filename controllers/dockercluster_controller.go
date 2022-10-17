@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	infrav1 "github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1"
+	"github.com/capi-samples/cluster-api-provider-docker/pkg/container"
 	"github.com/capi-samples/cluster-api-provider-docker/pkg/docker"
 	"github.com/pkg/errors"
 )
@@ -42,7 +43,8 @@ import (
 // DockerClusterReconciler reconciles a DockerCluster object
 type DockerClusterReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme           *runtime.Scheme
+	ContainerRuntime container.Runtime
 }
 
 //+kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=dockerclusters,verbs=get;list;watch;create;update;patch;delete
@@ -61,6 +63,7 @@ type DockerClusterReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.2/pkg/reconcile
 func (r *DockerClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, rerr error) {
 	logger := log.FromContext(ctx)
+	ctx = container.RuntimeInto(ctx, r.ContainerRuntime)
 
 	dockerCluster := &infrav1.DockerCluster{}
 	if err := r.Client.Get(ctx, req.NamespacedName, dockerCluster); err != nil {
