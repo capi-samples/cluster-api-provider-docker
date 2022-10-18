@@ -18,9 +18,13 @@ package controllers
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -31,14 +35,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrastructurev1alpha1 "github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1"
+	"github.com/capi-samples/cluster-api-provider-docker/pkg/docker"
+	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
+	"sigs.k8s.io/kind/pkg/cluster/constants"
 )
 
 // DockerMachineReconciler reconciles a DockerMachine object
 type DockerMachineReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme  *runtime.Scheme
+	Tracker *remote.ClusterCacheTracker
 }
 
 //+kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=dockermachines,verbs=get;list;watch;create;update;patch;delete
@@ -124,17 +134,27 @@ func (r *DockerMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	externalMachine, err := docker.NewMachine(ctx, cluster, machine.Name, nil)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "failed to create helper for managing the externalMachine")
+	}
+
+	externalLoadBalancer, err := docker.NewLoadBalancer(ctx, cluster, dockerCluster)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "failed to create helper for managing the externalLoadBalancer")
+	}
+
 	// Handle deleted machines
 	if !dockerMachine.ObjectMeta.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx, cluster, machine, dockerMachine)
 	}
 
 	// Handle non-deleted machines
-	return r.reconcileNormal(ctx, cluster, machine, dockerMachine)
+	return r.reconcileNormal(ctx, cluster, machine, dockerMachine, externalMachine, externalLoadBalancer)
 
 }
 
-func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine, dockerMachine *infrastructurev1alpha1.DockerMachine) (_ ctrl.Result, retErr error) {
+func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine, dockerMachine *infrastructurev1alpha1.DockerMachine, externalMachine *docker.Machine, externalLoadBalancer *docker.LoadBalancer) (_ ctrl.Result, retErr error) {
 	logger := log.FromContext(ctx)
 
 	// Check if the infrastructure is ready, otherwise return and wait for the cluster object to be updated
@@ -165,7 +185,100 @@ func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *
 		return ctrl.Result{}, nil
 	}
 
-	// TODO: Add logic to create containers and patch dockerMachine
+	// Create the docker container hosting the machine
+	role := constants.WorkerNodeRoleValue
+	if util.IsControlPlaneMachine(machine) {
+		role = constants.ControlPlaneNodeRoleValue
+	}
+
+	// Create the machine if not existing yet
+	if !externalMachine.Exists() {
+		if err := externalMachine.Create(ctx, dockerMachine.Spec.CustomImage, role, machine.Spec.Version, docker.FailureDomainLabel(machine.Spec.FailureDomain), nil); err != nil {
+			return ctrl.Result{}, errors.Wrap(err, "failed to create worker DockerMachine")
+		}
+	}
+
+	// if the machine is a control plane update the load balancer configuration
+	// we should only do this once, as reconfiguration more or less ensures
+	// node ref setting fails
+	if util.IsControlPlaneMachine(machine) && !dockerMachine.Status.LoadBalancerConfigured {
+		if err := externalLoadBalancer.UpdateConfiguration(ctx); err != nil {
+			return ctrl.Result{}, errors.Wrap(err, "failed to update DockerCluster.loadbalancer configuration")
+		}
+		dockerMachine.Status.LoadBalancerConfigured = true
+	}
+
+	patchHelper, err := patch.NewHelper(dockerMachine, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Update the ContainerProvisionedCondition condition
+	conditions.MarkTrue(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition)
+
+	// At, this stage, we are ready for bootstrap. However, if the BootstrapExecSucceededCondition is missing we add it and we
+	// issue an patch so the user can see the change of state before the bootstrap actually starts.
+	// NOTE: usually controller should not rely on status they are setting, but on the observed state; however
+	// in this case we are doing this because we explicitly want to give a feedback to users.
+	if !conditions.Has(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition) {
+		conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition, infrastructurev1alpha1.BootstrappingReason, clusterv1.ConditionSeverityInfo, "")
+		if err = patchHelper.Patch(ctx, dockerMachine); err != nil && retErr == nil {
+			logger.Error(err, "failed to patch dockerMachine")
+			retErr = err
+		}
+	}
+
+	// if the machine isn't bootstrapped, only then run bootstrap scripts
+	if !dockerMachine.Spec.Bootstrapped {
+		timeoutCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+		if err := externalMachine.CheckForBootstrapSuccess(timeoutCtx, false); err != nil {
+			bootstrapData, format, err := r.getBootstrapData(timeoutCtx, machine)
+			if err != nil {
+				logger.Error(err, "failed to get bootstrap data")
+				return ctrl.Result{}, err
+			}
+
+			// Run the bootstrap script. Simulates cloud-init/Ignition.
+			if err := externalMachine.ExecBootstrap(timeoutCtx, bootstrapData, format); err != nil {
+				conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition, infrastructurev1alpha1.BootstrapFailedReason, clusterv1.ConditionSeverityWarning, "Repeating bootstrap")
+				return ctrl.Result{}, errors.Wrap(err, "failed to exec DockerMachine bootstrap")
+			}
+			// Check for bootstrap success
+			if err := externalMachine.CheckForBootstrapSuccess(timeoutCtx, true); err != nil {
+				conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition, infrastructurev1alpha1.BootstrapFailedReason, clusterv1.ConditionSeverityWarning, "Repeating bootstrap")
+				return ctrl.Result{}, errors.Wrap(err, "failed to check for existence of bootstrap success file at /run/cluster-api/bootstrap-success.complete")
+			}
+		}
+		dockerMachine.Spec.Bootstrapped = true
+	}
+
+	// Update the BootstrapExecSucceededCondition condition
+	conditions.MarkTrue(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition)
+
+	if err := setMachineAddress(ctx, dockerMachine, externalMachine); err != nil {
+		logger.Error(err, "failed to set the machine address")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	// Usually a cloud provider will do this, but there is no docker-cloud provider
+	remoteClient, err := r.Tracker.GetClient(ctx, client.ObjectKeyFromObject(cluster))
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "failed to generate workload cluster client")
+	}
+	if err := externalMachine.SetNodeProviderID(ctx, remoteClient); err != nil {
+		if errors.As(err, &docker.ContainerNotRunningError{}) {
+			return ctrl.Result{}, errors.Wrap(err, "failed to patch the Kubernetes node with the machine providerID")
+		}
+		logger.Error(err, "failed to patch the Kubernetes node with the machine providerID")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	// Set ProviderID so the Cluster API Machine Controller can pull it
+	providerID := externalMachine.ProviderID()
+	dockerMachine.Spec.ProviderID = &providerID
+	dockerMachine.Status.Ready = true
+	conditions.MarkTrue(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition)
+
 	return ctrl.Result{}, nil
 }
 
@@ -189,4 +302,52 @@ func (r *DockerMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrastructurev1alpha1.DockerMachine{}).
 		Complete(r)
+}
+
+// setMachineAddress gets the address from the container corresponding to a docker node and sets it on the Machine object.
+func setMachineAddress(ctx context.Context, dockerMachine *infrastructurev1alpha1.DockerMachine, externalMachine *docker.Machine) error {
+	machineAddress, err := externalMachine.Address(ctx)
+	if err != nil {
+		return err
+	}
+
+	dockerMachine.Status.Addresses = []clusterv1.MachineAddress{
+		{
+			Type:    clusterv1.MachineHostName,
+			Address: externalMachine.ContainerName(),
+		},
+		{
+			Type:    clusterv1.MachineInternalIP,
+			Address: machineAddress,
+		},
+		{
+			Type:    clusterv1.MachineExternalIP,
+			Address: machineAddress,
+		},
+	}
+	return nil
+}
+
+func (r *DockerMachineReconciler) getBootstrapData(ctx context.Context, machine *clusterv1.Machine) (string, bootstrapv1.Format, error) {
+	if machine.Spec.Bootstrap.DataSecretName == nil {
+		return "", "", errors.New("error retrieving bootstrap data: linked Machine's bootstrap.dataSecretName is nil")
+	}
+
+	s := &corev1.Secret{}
+	key := client.ObjectKey{Namespace: machine.GetNamespace(), Name: *machine.Spec.Bootstrap.DataSecretName}
+	if err := r.Client.Get(ctx, key, s); err != nil {
+		return "", "", errors.Wrapf(err, "failed to retrieve bootstrap data secret for DockerMachine %s", klog.KObj(machine))
+	}
+
+	value, ok := s.Data["value"]
+	if !ok {
+		return "", "", errors.New("error retrieving bootstrap data: secret value key is missing")
+	}
+
+	format := s.Data["format"]
+	if len(format) == 0 {
+		format = []byte(bootstrapv1.CloudConfig)
+	}
+
+	return base64.StdEncoding.EncodeToString(value), bootstrapv1.Format(format), nil
 }

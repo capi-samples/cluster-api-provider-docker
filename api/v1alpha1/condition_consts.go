@@ -15,4 +15,22 @@ const (
 	// WaitingForBootstrapDataReason (Severity=Info) documents a DockerMachine waiting for the bootstrap
 	// script to be ready before starting to create the container that provides the DockerMachine infrastructure.
 	WaitingForBootstrapDataReason = "WaitingForBootstrapData"
+
+	// BootstrapExecSucceededCondition provides an observation of the DockerMachine bootstrap process.
+	// 	It is set based on successful execution of bootstrap commands and on the existence of
+	//	the /run/cluster-api/bootstrap-success.complete file.
+	// The condition gets generated after ContainerProvisionedCondition is True.
+	//
+	// NOTE as a difference from other providers, container provisioning and bootstrap are directly managed
+	// by the DockerMachine controller (not by cloud-init).
+	BootstrapExecSucceededCondition clusterv1.ConditionType = "BootstrapExecSucceeded"
+
+	// BootstrapFailedReason documents (Severity=Warning) a DockerMachine controller detecting an error while
+	// bootstrapping the Kubernetes node on the machine just provisioned; those kind of errors are usually
+	// transient and failed bootstrap are automatically re-tried by the controller.
+	BootstrapFailedReason = "BootstrapFailed"
+
+	// BootstrappingReason documents (Severity=Info) a DockerMachine currently executing the bootstrap
+	// script that creates the Kubernetes node on the newly provisioned machine infrastructure.
+	BootstrappingReason = "Bootstrapping"
 )

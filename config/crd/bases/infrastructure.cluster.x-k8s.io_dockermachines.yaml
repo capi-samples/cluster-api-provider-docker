@@ -35,6 +35,14 @@ spec:
           spec:
             description: DockerMachineSpec defines the desired state of DockerMachine
             properties:
+              bootstrapped:
+                description: Bootstrapped is true when the kubeadm bootstrapping has
+                  been run against this machine
+                type: boolean
+              customImage:
+                description: CustomImage allows customizing the container image that
+                  is used for running the machine
+                type: string
               providerID:
                 description: ProviderID is the identifier for the DockerMachine instance
                 type: string
@@ -42,6 +50,25 @@ spec:
           status:
             description: DockerMachineStatus defines the observed state of DockerMachine
             properties:
+              addresses:
+                description: Addresses contains the associated addresses for the docker
+                  machine.
+                items:
+                  description: MachineAddress contains information for the node's
+                    address.
+                  properties:
+                    address:
+                      description: The machine address.
+                      type: string
+                    type:
+                      description: Machine address type, one of Hostname, ExternalIP
+                        or InternalIP.
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
               conditions:
                 description: Conditions defines current service state of the BYOMachine.
                 items:
@@ -87,6 +114,10 @@ spec:
                   - type
                   type: object
                 type: array
+              loadBalancerConfigured:
+                description: LoadBalancerConfigured denotes that the machine has been
+                  added to the load balancer
+                type: boolean
               ready:
                 description: Ready indicates the docker infrastructure has been provisioned
                   and is ready
