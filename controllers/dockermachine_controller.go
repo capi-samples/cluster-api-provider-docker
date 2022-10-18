@@ -170,13 +170,13 @@ func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *
 }
 
 func (r *DockerMachineReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine, dockerMachine *infrastructurev1alpha1.DockerMachine) (_ ctrl.Result, retErr error) {
-	patchHelper, err := patch.NewHelper(dockerMachine, r.Client)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
+	// patchHelper, err := patch.NewHelper(dockerMachine, r.Client)
+	// if err != nil {
+	// 	return ctrl.Result{}, err
+	// }
 
-	conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
-	return ctrl.Result{}, patchHelper.Patch(ctx, dockerMachine)
+	// conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
+	// return ctrl.Result{}, patchHelper.Patch(ctx, dockerMachine)
 
 	// TODO: Add logic to delete machines
 	// Machine is deleted so remove the finalizer.
