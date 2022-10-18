@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags:
+    - "v*.*.*"
+
+env:
+  TAG: ${{ github.ref_name }}
+  REGISTRY: ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+    - name: Docker login
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build docker image
+      run: make docker-build TAG=${{ env.TAG }}
+    - name: Push docker image
+      run: make docker-push TAG=${{ env.TAG }}
+    - name: Update manifests
+      run: |
+        # this can be done via other means if required
+        kustomize build config/default/ > infrastructure-components.yaml
+        sed -i "s/cluster-api-provider-docker:dev/cluster-api-provider-docker:${TAG}/g" infrastructure-components.yaml
+    - name: GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        prerelease: false
+        draft: true
+        fail_on_unmatched_files: true
+        generate_release_notes: true
+        discussion_category_name: Announcements
+        name: ${{ env.TAG }}
+        files: |
+          templates/cluster-template.yaml
+          metadata.yaml
+          infrastructure-components.yaml

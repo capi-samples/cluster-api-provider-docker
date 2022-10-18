@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.18 as builder
+FROM golang:1.19 as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -23,5 +23,6 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
+LABEL org.opencontainers.image.source=https://github.com/capi-samples/cluster-api-provider-docker
 
 ENTRYPOINT ["/manager"]
