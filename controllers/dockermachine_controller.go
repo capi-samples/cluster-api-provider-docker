@@ -146,7 +146,7 @@ func (r *DockerMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Handle deleted machines
 	if !dockerMachine.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, cluster, machine, dockerMachine)
+		return r.reconcileDelete(ctx, cluster, machine, dockerMachine, externalMachine, externalLoadBalancer)
 	}
 
 	// Handle non-deleted machines
@@ -282,16 +282,35 @@ func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *
 	return ctrl.Result{}, nil
 }
 
-func (r *DockerMachineReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine, dockerMachine *infrastructurev1alpha1.DockerMachine) (_ ctrl.Result, retErr error) {
-	// patchHelper, err := patch.NewHelper(dockerMachine, r.Client)
-	// if err != nil {
-	// 	return ctrl.Result{}, err
-	// }
+func (r *DockerMachineReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine, dockerMachine *infrastructurev1alpha1.DockerMachine, externalMachine *docker.Machine, externalLoadBalancer *docker.LoadBalancer) (_ ctrl.Result, retErr error) {
+	logger := log.FromContext(ctx)
 
-	// conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
-	// return ctrl.Result{}, patchHelper.Patch(ctx, dockerMachine)
+	// Set the ContainerProvisionedCondition reporting delete is started, and issue a patch in order to make
+	// this visible to the users.
+	patchHelper, err := patch.NewHelper(dockerMachine, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
-	// TODO: Add logic to delete machines
+	conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
+
+	if err = patchHelper.Patch(ctx, dockerMachine); err != nil && retErr == nil {
+		logger.Error(err, "failed to patch dockerMachine")
+		retErr = err
+	}
+
+	// delete the machine
+	if err := externalMachine.Delete(ctx); err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "failed to delete DockerMachine")
+	}
+
+	// if the deleted machine is a control-plane node, remove it from the load balancer configuration;
+	if util.IsControlPlaneMachine(machine) {
+		if err := externalLoadBalancer.UpdateConfiguration(ctx); err != nil {
+			return ctrl.Result{}, errors.Wrap(err, "failed to update DockerCluster.loadbalancer configuration")
+		}
+	}
+
 	// Machine is deleted so remove the finalizer.
 	controllerutil.RemoveFinalizer(dockerMachine, infrastructurev1alpha1.MachineFinalizer)
 	return ctrl.Result{}, nil
