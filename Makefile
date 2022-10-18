@@ -1,6 +1,10 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/capi-samples/cluster-api-provider-docker:dev
+TAG ?= dev
+REGISTRY ?= ghcr.io
+ORG ?= capi-samples
+CONTROLLER_IMAGE_NAME := cluster-api-provider-docker
+IMG ?= $(REGISTRY)/$(ORG)/$(CONTROLLER_IMAGE_NAME):$(TAG)
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.24.2
