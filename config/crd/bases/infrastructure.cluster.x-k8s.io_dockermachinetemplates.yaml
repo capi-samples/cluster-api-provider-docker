@@ -62,6 +62,14 @@ spec:
                   spec:
                     description: DockerMachineSpec defines the desired state of DockerMachine
                     properties:
+                      bootstrapped:
+                        description: Bootstrapped is true when the kubeadm bootstrapping
+                          has been run against this machine
+                        type: boolean
+                      customImage:
+                        description: CustomImage allows customizing the container
+                          image that is used for running the machine
+                        type: string
                       providerID:
                         description: ProviderID is the identifier for the DockerMachine
                           instance

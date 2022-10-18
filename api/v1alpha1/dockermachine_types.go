@@ -38,6 +38,16 @@ type DockerMachineSpec struct {
 
 	// ProviderID is the identifier for the DockerMachine instance
 	ProviderID *string `json:"providerID,omitempty"`
+
+	// CustomImage allows customizing the container image that is used for
+	// running the machine
+	// +optional
+	CustomImage string `json:"customImage,omitempty"`
+
+	// Bootstrapped is true when the kubeadm bootstrapping has been run
+	// against this machine
+	// +optional
+	Bootstrapped bool `json:"bootstrapped,omitempty"`
 }
 
 // Mount specifies a host volume to mount into a container.
@@ -68,6 +78,15 @@ type DockerMachineStatus struct {
 	// Conditions defines current service state of the BYOMachine.
 	// +optional
 	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+
+	// LoadBalancerConfigured denotes that the machine has been
+	// added to the load balancer
+	// +optional
+	LoadBalancerConfigured bool `json:"loadBalancerConfigured"`
+
+	// Addresses contains the associated addresses for the docker machine.
+	// +optional
+	Addresses []clusterv1.MachineAddress `json:"addresses,omitempty"`
 }
 
 //+kubebuilder:object:root=true
