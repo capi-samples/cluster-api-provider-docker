@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"reflect"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,9 +33,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	infrastructurev1alpha1 "github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1"
+	infrav1 "github.com/capi-samples/cluster-api-provider-docker/api/v1alpha1"
 	"github.com/capi-samples/cluster-api-provider-docker/pkg/container"
 	"github.com/capi-samples/cluster-api-provider-docker/pkg/docker"
 	"github.com/pkg/errors"
@@ -325,8 +329,18 @@ func (r *DockerMachineReconciler) reconcileDelete(ctx context.Context, cluster *
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DockerMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	var (
+		controlledType     = &infrastructurev1alpha1.DockerMachine{}
+		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
+		controlledTypeGVK  = infrav1.GroupVersion.WithKind(controlledTypeName)
+	)
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&infrastructurev1alpha1.DockerMachine{}).
+		For(controlledType).
+		// Watch the CAPI resource that owns this infrastructure resource
+		Watches(
+			&source.Kind{Type: &clusterv1.Machine{}},
+			handler.EnqueueRequestsFromMapFunc(util.MachineToInfrastructureMapFunc(controlledTypeGVK)),
+		).
 		Complete(r)
 }
 
