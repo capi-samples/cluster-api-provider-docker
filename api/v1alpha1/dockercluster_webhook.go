@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -54,7 +55,10 @@ var _ webhook.Validator = &DockerCluster{}
 func (r *DockerCluster) ValidateCreate() error {
 	dockerclusterlog.Info("validate create", "name", r.Name)
 
-	// TODO(user): fill in your validation logic upon object creation.
+	if r.Name == "kubecon-eu" {
+		return fmt.Errorf("docker cluster name cannot be kubecon-eu")
+	}
+
 	return nil
 }
 
