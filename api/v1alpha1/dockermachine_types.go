@@ -25,9 +25,8 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
-	// MachineFinalizer allows ReconcileDockeroMachine to clean up Byo
-	// resources associated with DockeroMachine before removing it from the
-	// API Server.
+	// MachineFinalizer allows cleaning up resources associated with
+	// DockerMachine before removing it from the API Server.
 	MachineFinalizer = "dockermachine.infrastructure.cluster.x-k8s.io"
 )
 
