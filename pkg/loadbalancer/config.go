@@ -19,7 +19,7 @@ global
   log stdout format raw local0 info
 
 defaults
-  mode http
+  mode tcp
   timeout client 10s
   timeout connect 5s
   timeout server 10s
@@ -39,9 +39,9 @@ frontend control-plane
   default_backend kube-apiservers
 
 backend kube-apiservers
-  # option httpchk GET /healthz
+  option httpchk GET /healthz
   {{- range $server, $address := .BackendServers}}
-  server {{ $server }} {{ $address }} check
+  server {{ $server }} {{ $address }} check check-ssl verify none
   {{- end}}
 `
 

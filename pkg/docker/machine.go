@@ -49,8 +49,9 @@ import (
 )
 
 const (
-	defaultImageName = "kindest/node"
-	defaultImageTag  = "v1.25.0"
+	defaultImageName    = "kindest/node"
+	defaultImageTag     = "v1.25.0"
+	defaultDockerSocket = "/var/run/docker.sock"
 )
 
 type nodeCreator interface {
@@ -196,6 +197,13 @@ func (m *Machine) ContainerImage() string {
 // Create creates a docker container hosting a Kubernetes node.
 func (m *Machine) Create(ctx context.Context, image string, role string, version *string, labels map[string]string, mounts []infrav1.Mount) error {
 	log := ctrl.LoggerFrom(ctx)
+
+	if !hasDockerSocketMount(mounts) {
+		mounts = append(mounts, infrav1.Mount{
+			ContainerPath: defaultDockerSocket,
+			HostPath:      defaultDockerSocket,
+		})
+	}
 
 	// Create if not exists.
 	if m.container == nil {
@@ -490,4 +498,18 @@ func logContainerDebugInfo(ctx context.Context, log logr.Logger, name string) {
 		return
 	}
 	log.Info("Got logs from the machine container", "output", strings.ReplaceAll(buffer.String(), "\\n", "\n"))
+}
+
+func hasDockerSocketMount(mounts []infrav1.Mount) bool {
+	if len(mounts) == 0 {
+		return false
+	}
+
+	for _, mount := range mounts {
+		if strings.ContainsAny(mount.HostPath, "docker.sock") {
+			return true
+		}
+	}
+
+	return false
 }
