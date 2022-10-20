@@ -37,6 +37,9 @@ const KubeadmContainerPort = 6443
 // ControlPlanePort is the port for accessing the control plane API in the container.
 const ControlPlanePort = 6443
 
+// HAProxyStatusPort is the port for accessing the HAPProxy status in the container.
+const HAProxyStatusPort = 8404
+
 // DefaultNetwork is the default network name to use in kind.
 const DefaultNetwork = "kind"
 
@@ -117,13 +120,28 @@ func (m *Manager) CreateExternalLoadBalancerNode(ctx context.Context, name, imag
 		port = p
 	}
 
+	// get a random port for the status page
+	p, err := getPort()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get port for HAProxy status")
+	}
+	haProxyPort := p
+
 	// load balancer port mapping
-	portMappings := []v1alpha4.PortMapping{{
-		ListenAddress: listenAddress,
-		HostPort:      port,
-		ContainerPort: ControlPlanePort,
-		Protocol:      v1alpha4.PortMappingProtocolTCP,
-	}}
+	portMappings := []v1alpha4.PortMapping{
+		{
+			ListenAddress: listenAddress,
+			HostPort:      port,
+			ContainerPort: ControlPlanePort,
+			Protocol:      v1alpha4.PortMappingProtocolTCP,
+		},
+		{
+			ListenAddress: listenAddress,
+			HostPort:      haProxyPort,
+			ContainerPort: HAProxyStatusPort,
+			Protocol:      v1alpha4.PortMappingProtocolTCP,
+		},
+	}
 	createOpts := &nodeCreateOpts{
 		Name:         name,
 		Image:        image,
