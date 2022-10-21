@@ -23,7 +23,6 @@ import (
 	"reflect"
 	"time"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/cluster-api/controllers/remote"
 	"sigs.k8s.io/cluster-api/util"
@@ -53,7 +52,6 @@ import (
 type DockerMachineReconciler struct {
 	client.Client
 	ContainerRuntime container.Runtime
-	Scheme           *runtime.Scheme
 	Tracker          *remote.ClusterCacheTracker
 }
 
@@ -125,9 +123,12 @@ func (r *DockerMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	helper, _ := patch.NewHelper(dockerMachine, r.Client)
+	patchHelper, err := patch.NewHelper(dockerMachine, r)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	defer func() {
-		if err = helper.Patch(ctx, dockerMachine); err != nil && reterr == nil {
+		if err = patchDockerMachine(ctx, patchHelper, dockerMachine); err != nil && reterr == nil {
 			logger.Error(err, "failed to patch dockerMachine")
 			reterr = err
 		}
@@ -163,6 +164,29 @@ func (r *DockerMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Handle non-deleted machines
 	return r.reconcileNormal(ctx, cluster, machine, dockerMachine, externalMachine, externalLoadBalancer)
 
+}
+
+func patchDockerMachine(ctx context.Context, patchHelper *patch.Helper, dockerMachine *infrav1.DockerMachine) error {
+	// Always update the readyCondition by summarizing the state of other conditions.
+	// A step counter is added to represent progress during the provisioning process (instead we are hiding the step counter during the deletion process).
+	conditions.SetSummary(dockerMachine,
+		conditions.WithConditions(
+			infrav1.ContainerProvisionedCondition,
+			infrav1.BootstrapExecSucceededCondition,
+		),
+		conditions.WithStepCounterIf(dockerMachine.ObjectMeta.DeletionTimestamp.IsZero() && dockerMachine.Spec.ProviderID == nil),
+	)
+
+	// Patch the object, ignoring conflicts on the conditions owned by this controller.
+	return patchHelper.Patch(
+		ctx,
+		dockerMachine,
+		patch.WithOwnedConditions{Conditions: []clusterv1.ConditionType{
+			clusterv1.ReadyCondition,
+			infrav1.ContainerProvisionedCondition,
+			infrav1.BootstrapExecSucceededCondition,
+		}},
+	)
 }
 
 func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, machine *clusterv1.Machine, dockerMachine *infrastructurev1alpha1.DockerMachine, externalMachine *docker.Machine, externalLoadBalancer *docker.LoadBalancer) (_ ctrl.Result, retErr error) {
@@ -228,12 +252,12 @@ func (r *DockerMachineReconciler) reconcileNormal(ctx context.Context, cluster *
 	conditions.MarkTrue(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition)
 
 	// At, this stage, we are ready for bootstrap. However, if the BootstrapExecSucceededCondition is missing we add it and we
-	// issue an patch so the user can see the change of state before the bootstrap actually starts.
+	// issue a patch so the user can see the change of state before the bootstrap actually starts.
 	// NOTE: usually controller should not rely on status they are setting, but on the observed state; however
 	// in this case we are doing this because we explicitly want to give a feedback to users.
 	if !conditions.Has(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition) {
 		conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.BootstrapExecSucceededCondition, infrastructurev1alpha1.BootstrappingReason, clusterv1.ConditionSeverityInfo, "")
-		if err = patchHelper.Patch(ctx, dockerMachine); err != nil && retErr == nil {
+		if err = patchDockerMachine(ctx, patchHelper, dockerMachine); err != nil && retErr == nil {
 			logger.Error(err, "failed to patch dockerMachine")
 			retErr = err
 		}
@@ -305,7 +329,7 @@ func (r *DockerMachineReconciler) reconcileDelete(ctx context.Context, cluster *
 
 	conditions.MarkFalse(dockerMachine, infrastructurev1alpha1.ContainerProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
 
-	if err = patchHelper.Patch(ctx, dockerMachine); err != nil && retErr == nil {
+	if err = patchDockerMachine(ctx, patchHelper, dockerMachine); err != nil && retErr == nil {
 		logger.Error(err, "failed to patch dockerMachine")
 		retErr = err
 	}

@@ -143,7 +143,6 @@ func main() {
 	if err = (&controllers.DockerMachineReconciler{
 		Client:           mgr.GetClient(),
 		ContainerRuntime: runtimeClient,
-		Scheme:           mgr.GetScheme(),
 		Tracker:          tracker,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DockerMachine")
