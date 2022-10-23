@@ -87,7 +87,7 @@ spec:
                   type: object
                 type: array
               conditions:
-                description: Conditions defines current service state of the BYOMachine.
+                description: Conditions defines current service state of the DockerMachine.
                 items:
                   description: Condition defines an observation of a Cluster API resource
                     operational state.

@@ -74,7 +74,7 @@ type DockerMachineStatus struct {
 	// +optional
 	Ready bool `json:"ready"`
 
-	// Conditions defines current service state of the BYOMachine.
+	// Conditions defines current service state of the DockerMachine.
 	// +optional
 	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
 
